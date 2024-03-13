@@ -20,7 +20,7 @@
       .variation-name {
         color: grey
       }
-      #save-pos-button {
+      #button-cont {
         position: absolute;
         left: 10px;
         bottom: 10px;
@@ -29,6 +29,10 @@
   </head>
   <body style="height: 100%; margin: 0;">
     <div id="network"></div>
-    <button id="save-pos-button">Save Positions</button>
+    <div id="button-cont">
+      <input type="checkbox" id="hierarchical-button" name="hierarchical"  />
+      <label for="hierarchical">Hierarchical</label>
+      <button id="save-pos-button">Save Positions</button>
+    </div>
   </body>
 </html>

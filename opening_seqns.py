@@ -1,3 +1,4 @@
+import argparse
 import csv
 import io
 import json
@@ -76,7 +77,6 @@ def generate_nodes(tree: OpeningTree,
             "opening_name": opening_name,
             "borderWidth": 0,
             "opacity": 0,
-            "fixed": True,
             "level": 10,
             "hidden": opening_data[opening_name]["count"] < 300,
             "font": { "size": font_size }
@@ -100,8 +100,8 @@ def generate_edges(tree: OpeningTree,
     if len(tree["next_moves"]) == 0:
         yield { "from": parent_id, "to": parent_id + "-label", "width": 3 }
 
-def annotate_nodes(nodes: list[dict], radius: int) -> None:
-    """Annotate nodes so that labels are arranged in a circle."""
+def arrange_fixed_nodes(nodes: list[dict], radius: int) -> None:
+    """Arrange nodes so that labels are arranged in a circle."""
     label_count = sum(1 for node in nodes if node["id"].endswith("-label"))
     i = 0
     for node in nodes:
@@ -111,6 +111,7 @@ def annotate_nodes(nodes: list[dict], radius: int) -> None:
             angle = i/label_count*2*math.pi - math.pi/2
             node["x"] = round(math.cos(angle) * radius)
             node["y"] = round(math.sin(angle) * radius)
+            node["fixed"] = True
             i += 1
 
 def read_csv(csv_path: str) -> dict[str, OpeningCount]:
@@ -163,7 +164,7 @@ def write_js(js_path: str,
     print(f"Writing JS to {js_path}:", end=" ")
     node_data = list(generate_nodes(tree_data, opening_data))
     edge_data = list(generate_edges(tree_data, opening_data))
-    annotate_nodes(node_data, 2000)
+    arrange_fixed_nodes(node_data, 2000)
     node_data_str = json.dumps(node_data, indent=2)
     edge_data_str = json.dumps(edge_data, indent=2)
     with open(js_path, "w+", encoding="utf-8") as js_file:
@@ -175,7 +176,11 @@ const EDGES = {edge_data_str};\n")
 
 def main() -> int:
     """Main function."""
-    openings = read_csv("data/games_metadata_profile.csv")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('input_dataset')
+    args = parser.parse_args()
+
+    openings = read_csv(args.input_dataset)
     opening_tree = parse_openings(openings)
     print("Collapsing tree:", end=" ")
     collapse_tree_data(opening_tree)
