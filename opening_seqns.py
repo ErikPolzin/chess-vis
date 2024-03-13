@@ -1,7 +1,7 @@
 import csv
 import io
 import json
-from typing import Iterable, Optional, TypedDict
+from typing import Iterable, TypedDict
 import math
 
 import chess
@@ -15,10 +15,7 @@ class OpeningTree(TypedDict):
     next_moves: dict[str, "OpeningTree"]
 
 OpeningCount = TypedDict('OpeningCount', {'moves': str, 'count': int})
-
-openingIds: dict[int, str] = {}
-MIN_COLOUR = 0x4242f5  # 0xeb4c34
-MAX_COLOUR = 0xf5428d  # 0x86eb34
+OpeningData = dict[str, OpeningCount]
 
 
 def luminance(c: int) -> float:
@@ -28,6 +25,18 @@ def luminance(c: int) -> float:
     red = (c >> 16) & 255
     return (.299 * red) + (.587 * green) + (.114 * blue)
 
+def tree_relevance(tree: OpeningTree, opening_data: OpeningData) -> int:
+    """Compute the relevance of a tree by summing up openings that this tree contains."""
+    return sum(opening_data[opening]["count"] for opening in tree["openings"])
+
+def scale_color(x: float) -> int:
+    """Graduated colour scale from 0 (light blue) to 1 (warm yellow)."""
+    assert 0 <= x <= 1, "Invalid colour scale."
+    blue  = int(min((max((4*(0.75-x), 0.)), 1.))*255)
+    red   = int(min((max((4*(x-0.25), 0.)), 1.))*255)
+    green = int(min((max((4*math.fabs(x-0.5)-1., 0.)), 1.))*255)
+    return (red<<16) + (green<<8) + blue
+
 def collapse_tree_data(tree: OpeningTree) -> None:
     """Collapse paths that only describe one opening."""
     for subtree in tree["next_moves"].values():
@@ -36,31 +45,29 @@ def collapse_tree_data(tree: OpeningTree) -> None:
         tree["next_moves"].clear()
 
 def generate_nodes(tree: OpeningTree,
+                   opening_data: OpeningData,
                    node_id: str = "root",
                    node_label: str = "Start",
-                   color_range: tuple[int, int] = (MIN_COLOUR, MAX_COLOUR),
-                   opening_data: Optional[dict[str, OpeningCount]] = None) -> Iterable[dict]:
+                   level: int = 0) -> Iterable[dict]:
     """Generate Vis.js nodes from an opening tree."""
-    bg_color = color_range[0] + round((color_range[1]-color_range[0])/2)
+    total_count = sum(v["count"] for v in opening_data.values())
+    opening_count = tree_relevance(tree, opening_data) or total_count
+    font_size = 30 + math.sqrt(opening_count / total_count) * 150
+    bg_color = scale_color((opening_count / total_count)**(1/4))
     fg_color = "#ffffff" if luminance(bg_color) < 128 else "#000000"
-    data = { "id": node_id, "label": node_label, "borderWidth": 0, "color": f"#{bg_color:06x}" }
-    if opening_data:
-        total_count = sum(v["count"] for v in opening_data.values())
-        opening_count = sum(opening_data[opening]["count"] for opening in tree["openings"])
-        font_size = 30 + math.sqrt(opening_count / total_count) * 150
-        data["font"] = { "size": round(font_size), "color": fg_color }
-    yield data
-    for i, (k, v) in enumerate(tree["next_moves"].items()):
-        mc = round(color_range[0] + (i+0)/len(tree["next_moves"])*(color_range[1] - color_range[0]))
-        Mc = round(color_range[0] + (i+1)/len(tree["next_moves"])*(color_range[1] - color_range[0]))
+    yield {
+        "id": node_id,
+        "label": node_label,
+        "borderWidth": 0,
+        "color": f"#{bg_color:06x}",
+        "level": level,
+        "font": { "size": round(font_size), "color": fg_color }
+    }
+    for (k, v) in tree["next_moves"].items():
         yield from generate_nodes(
-            v, f"{node_id}/{k}", node_label=k, color_range=(mc, Mc), opening_data=opening_data)
-    if len(tree["next_moves"]) == 0 and opening_data:
+            v, opening_data, f"{node_id}/{k}", node_label=k, level=level+1)
+    if len(tree["next_moves"]) == 0:
         opening_name = set(tree["openings"]).pop()
-        max_id = max(openingIds.keys()) if openingIds else 0
-        openingIds[max_id+1] = opening_name
-        font_size = 40
-        total_count = sum(i["count"] for i in opening_data.values())
         opening_count = opening_data[opening_name]["count"]
         font_size = 6 + round((opening_count/total_count)**(1/3)*250)
         yield {
@@ -70,28 +77,26 @@ def generate_nodes(tree: OpeningTree,
             "borderWidth": 0,
             "opacity": 0,
             "fixed": True,
+            "level": 10,
             "hidden": opening_data[opening_name]["count"] < 300,
             "font": { "size": font_size }
         }
 
 def generate_edges(tree: OpeningTree,
-                   parent_id: str = "root",
-                   color_range: tuple[int, int] = (MIN_COLOUR, MAX_COLOUR),
-                   opening_data: Optional[dict[str, OpeningCount]] = None) -> Iterable[dict]:
+                   opening_data: dict[str, OpeningCount],
+                   parent_id: str = "root") -> Iterable[dict]:
     """Generate Vis.js edges from an opening tree."""
-    for i, (k, v) in enumerate(tree["next_moves"].items()):
+    total_count = sum(i["count"] for i in opening_data.values())
+    for (k, v) in tree["next_moves"].items():
         node_id = f"{parent_id}/{k}"
-        data = { "to": node_id, "from": parent_id, "width": 1 }
-        mc = round(color_range[0] + (i+0)/len(tree["next_moves"])*(color_range[1] - color_range[0]))
-        Mc = round(color_range[0] + (i+1)/len(tree["next_moves"])*(color_range[1] - color_range[0]))
-        # data["color"] = f"#{color_range[0]+round((color_range[1]-color_range[0])/2):06x}"
-        data["color"] = {"inherit": "both"}
-        if opening_data:
-            total_count = sum(i["count"] for i in opening_data.values())
-            opening_count = sum(opening_data[opening]["count"] for opening in v["openings"])
-            data["width"] = round(1 + math.sqrt(opening_count / total_count) * 100)
-        yield data
-        yield from generate_edges(v, node_id, color_range=(mc, Mc), opening_data=opening_data)
+        opening_count = sum(opening_data[opening]["count"] for opening in v["openings"])
+        yield {
+            "to": node_id,
+            "from": parent_id,
+            "color": { "inherit": "both" },
+            "width": round(1 + math.sqrt(opening_count / total_count) * 100)
+        }
+        yield from generate_edges(v, opening_data, node_id)
     if len(tree["next_moves"]) == 0:
         yield { "from": parent_id, "to": parent_id + "-label", "width": 3 }
 
@@ -101,8 +106,7 @@ def annotate_nodes(nodes: list[dict], radius: int) -> None:
     i = 0
     for node in nodes:
         if node["id"] == "root":
-            node.update(
-                {"x": 0, "y": 0, "fixed": True, "font": {"size": 150, "color": "#ffffff"}})
+            node.update({"x": 0, "y": 0, "fixed": True })
         if node["id"].endswith("-label"):
             angle = i/label_count*2*math.pi - math.pi/2
             node["x"] = round(math.cos(angle) * radius)
@@ -154,20 +158,18 @@ def parse_openings(openings: dict[str, OpeningCount], threshold: int = 120) -> O
 
 def write_js(js_path: str,
              tree_data: OpeningTree,
-             opening_data: Optional[dict[str, OpeningCount]]) -> None:
+             opening_data: dict[str, OpeningCount]) -> None:
     """Write opening tree to js."""
     print(f"Writing JS to {js_path}:", end=" ")
-    node_data = list(generate_nodes(tree_data, opening_data=opening_data))
-    edge_data = list(generate_edges(tree_data, opening_data=opening_data))
+    node_data = list(generate_nodes(tree_data, opening_data))
+    edge_data = list(generate_edges(tree_data, opening_data))
     annotate_nodes(node_data, 2000)
     node_data_str = json.dumps(node_data, indent=2)
     edge_data_str = json.dumps(edge_data, indent=2)
-    opening_data_str = json.dumps(openingIds, indent=2)
     with open(js_path, "w+", encoding="utf-8") as js_file:
         js_file.write(f"\
 const NODES = {node_data_str};\n\
-const EDGES = {edge_data_str};\n\
-const OPENINGS = {opening_data_str};\n")
+const EDGES = {edge_data_str};\n")
     print("Done")
 
 
