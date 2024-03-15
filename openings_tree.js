@@ -1,8 +1,8 @@
-let network, nodes, edges;
+let network, nodes, edges, svgContext;
 
 
 function loadFixedPositions() {
-  let posDataString = Cookies.get('posData');
+  let posDataString = localStorage.getItem('posData');
   if (posDataString) {
     posData = JSON.parse(posDataString);
     nodes.update(posData);
@@ -22,10 +22,10 @@ function saveFixedPositions() {
       });
     }
   }
-  Cookies.set('posData', JSON.stringify(posData));
+  localStorage.setItem('posData', JSON.stringify(posData));
 }
 
-window.onload = (e) => {
+window.addEventListener('load', (event) => {
     // create an array with nodes
     nodes = new vis.DataSet(NODES);
     // create an array with edges
@@ -42,6 +42,18 @@ window.onload = (e) => {
       },
       physics: {
         solver: 'repulsion'
+      },
+      edges: {
+        arrows: {
+          to: {
+            enabled: true
+          }
+        }
+      },
+      nodes: {
+        font: {
+          multi: "html"
+        }
       }
     };
     network = new vis.Network(container, data, options);
@@ -58,4 +70,4 @@ window.onload = (e) => {
     var posButton = document.getElementById("save-pos-button");
     posButton.onclick = () => saveFixedPositions();
     loadFixedPositions();
-}
+})

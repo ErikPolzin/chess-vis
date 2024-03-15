@@ -38,6 +38,13 @@ def scale_color(x: float) -> int:
     green = int(min((max((4*math.fabs(x-0.5)-1., 0.)), 1.))*255)
     return (red<<16) + (green<<8) + blue
 
+def opening_name_html(opening_name: str) -> str:
+    """HTML representation for the opening name."""
+    parts = opening_name.split(": ")
+    if len(parts) == 2:
+        opening_name = f"{parts[0]}: <i>{parts[1]}</i>"
+    return opening_name
+
 def collapse_tree_data(tree: OpeningTree) -> None:
     """Collapse paths that only describe one opening."""
     for subtree in tree["next_moves"].values():
@@ -58,7 +65,7 @@ def generate_nodes(tree: OpeningTree,
     fg_color = "#ffffff" if luminance(bg_color) < 128 else "#000000"
     yield {
         "id": node_id,
-        "label": node_label,
+        "label": f"<b>{node_label}</b>",
         "borderWidth": 0,
         "color": f"#{bg_color:06x}",
         "level": level,
@@ -73,10 +80,10 @@ def generate_nodes(tree: OpeningTree,
         font_size = 6 + round((opening_count/total_count)**(1/3)*250)
         yield {
             "id": node_id + "-label",
-            "label": opening_name,
+            "label": opening_name_html(opening_name),
             "opening_name": opening_name,
             "borderWidth": 0,
-            "opacity": 0,
+            "color": "white",
             "level": 10,
             "hidden": opening_data[opening_name]["count"] < 300,
             "font": { "size": font_size }
@@ -98,7 +105,7 @@ def generate_edges(tree: OpeningTree,
         }
         yield from generate_edges(v, opening_data, node_id)
     if len(tree["next_moves"]) == 0:
-        yield { "from": parent_id, "to": parent_id + "-label", "width": 3 }
+        yield { "from": parent_id, "to": parent_id + "-label", "width": 3, "arrows": { "to": False } }
 
 def arrange_fixed_nodes(nodes: list[dict], radius: int) -> None:
     """Arrange nodes so that labels are arranged in a circle."""
@@ -106,7 +113,8 @@ def arrange_fixed_nodes(nodes: list[dict], radius: int) -> None:
     i = 0
     for node in nodes:
         if node["id"] == "root":
-            node.update({"x": 0, "y": 0, "fixed": True })
+            node.update({"x": 0, "y": 0, "fixed": True, "color": "green" })
+            node["font"].update({ "color": "white" })
         if node["id"].endswith("-label"):
             angle = i/label_count*2*math.pi - math.pi/2
             node["x"] = round(math.cos(angle) * radius)
